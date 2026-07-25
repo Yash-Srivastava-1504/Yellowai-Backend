@@ -35,7 +35,7 @@ Built as a take-home assignment for an AI Intern role. Adapted from an existing 
 ## Project Structure
 
 ```
-Frontend-Yellowai/manah-mindful-muse/     # React frontend
+Frontend-Yellowai/agentforge-frontend/     # React frontend
   src/
     pages/
       LandingPage.tsx       # Marketing / home page
@@ -59,8 +59,9 @@ Frontend-Yellowai/manah-mindful-muse/     # React frontend
     projects-prompts-migration.sql    # projects, prompts, conversations.project_id
     project-files-migration.sql       # New: project_files table and storage bucket
 
-Backend-Yellowai/Manah_AI_Companion/manah-backend-py/     # FastAPI backend
-  main.py           # App factory, routers, middleware
+Backend-Yellowai/agentforge-backend/     # FastAPI backend
+  api/
+    main.py           # App factory, routers, middleware
   config.py         # Settings via pydantic-settings
   auth/
     middleware.py   # Supabase JWT verification (JWKS RS256 + HS256 fallback)
@@ -101,7 +102,7 @@ In your Supabase project → SQL Editor, run these in order:
 ### 2. Backend Setup
 
 ```bash
-cd Backend-Yellowai/Manah_AI_Companion/manah-backend-py
+cd Backend-Yellowai/agentforge-backend/api
 
 # Install dependencies
 pip install -r requirements.txt
@@ -120,7 +121,7 @@ Swagger docs: `http://localhost:3001/docs`
 ### 3. Frontend Setup
 
 ```bash
-cd Frontend-Yellowai/manah-mindful-muse
+cd Frontend-Yellowai/agentforge-frontend
 
 # Install dependencies
 npm install
