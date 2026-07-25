@@ -19,10 +19,10 @@
        │ 1:N
        ├──────────────────────────┐
        ▼                          ▼
-┌─────────────┐         ┌─────────────────┐
-│   prompts    │         │  conversations  │
-│  (versioned) │         │  project_id FK  │
-│  is_active   │         └────────┬────────┘
+┌─────────────┐         ┌─────────────────┐         ┌─────────────────┐
+│   prompts    │         │  conversations  │         │  project_files  │
+│  (versioned) │         │  project_id FK  │         │  project_id FK  │
+│  is_active   │         └────────┬────────┘         └─────────────────┘
 └─────────────┘                  │ 1:N
                                   ▼
                          ┌─────────────────┐
@@ -34,6 +34,7 @@
 **Relationships:**
 - A `User` owns many `Projects`.
 - A `Project` has many `Prompts` (version history). At most one has `is_active = true`.
+- A `Project` has many `Project_Files` (knowledge base documents stored in Supabase Storage).
 - A `Project` has many `Conversations` (one per chat session, currently one active thread per project).
 - A `Conversation` has many `Messages` (role: `user` | `assistant`, content, timestamp).
 
@@ -52,9 +53,9 @@ The FastAPI backend is fully stateless — no in-memory session state, no sticky
 Every table — `projects`, `prompts`, `conversations`, `messages` — has RLS policies that scope reads and writes strictly through `auth.uid() = user_id` (or through a JOIN to `projects.user_id` for nested tables). This means even if application-level checks were bypassed, the database would refuse to return or modify another user's data. The backend additionally validates Supabase JWTs on every request using `get_supabase_user()` (JWT signature verification via JWKS or shared secret), rejecting expired or malformed tokens with HTTP 401 before any database access.
 
 ### Extensibility
-**Decision: Prompt versioning via `is_active` flag instead of a single mutable field.**
+**Decision: Prompt versioning and Modular Knowledge Base.**
 
-Rather than storing one system prompt per project and overwriting it, each prompt update inserts a new `prompts` row and deactivates previous ones. This means prompt history is always preserved — you can revert to a previous version by flipping `is_active` without data loss. The `build_project_prompt()` function in `services/prompt_builder.py` takes the active prompt content as a plain string, making it trivial to extend (e.g., append retrieved document chunks for RAG, inject conversation summaries, or add user-specific context).
+Rather than storing one system prompt per project and overwriting it, each prompt update inserts a new `prompts` row and deactivates previous ones. This means prompt history is always preserved. Additionally, we implemented a custom Knowledge Base (File Upload) system using Supabase Storage and `PyPDF2` on the backend, rather than relying on OpenAI's expensive Files API. This fulfills the assignment's "Good to have" requirement securely at $0 cost, and the `build_project_prompt()` function elegantly combines the system prompt with extracted file text before hitting the LLM.
 
 ### Performance
 **Decision: Server-Sent Events (SSE) for streaming LLM responses.**
@@ -86,8 +87,11 @@ FastAPI (chat_v2/router.py)
   │    ├─ Supabase REST: verify project.user_id == auth user
   │    └─ Supabase REST: fetch active prompt content
   │
-  ├─ build_project_prompt(system_prompt, thread)
-  │    └─ [{role:system, content:prompt}, ...messages]
+  ├─ _fetch_project_files(project_id)
+  │    └─ Supabase REST: fetch extracted text from all project files
+  │
+  ├─ build_project_prompt(system_prompt, thread, project_files)
+  │    └─ [{role:system, content:prompt+files}, ...messages]
   │
   ├─ llm.stream_chat(messages)  →  OpenRouter API (Gemini)
   │

@@ -10,6 +10,7 @@ Built as a take-home assignment for an AI Intern role. Adapted from an existing 
 
 - **Authentication** — Email/password registration and login via [Supabase Auth](https://supabase.com/auth). JWTs issued by Supabase are validated on the backend using JWKS (RS256) or a shared secret (HS256).
 - **Project/Agent Management** — Create, edit, and delete AI agents. Each agent has a name, description, and system prompt.
+- **Knowledge Base (File Uploads)** — Upload PDF, TXT, or CSV files to an agent. The backend parses the files and injects the extracted text into the agent's context, providing a $0 alternative to the OpenAI Files API.
 - **System Prompts** — Each agent has a versioned prompt history. The backend always loads the most recent active prompt as the LLM's system message.
 - **Streaming Chat** — Responses stream token-by-token via Server-Sent Events (SSE). The conversation history is persisted in Supabase and loaded on every page visit.
 - **Row Level Security** — All Supabase tables enforce RLS policies so users can never access each other's agents, prompts, or conversations.
@@ -55,7 +56,8 @@ Frontend-Yellowai/manah-mindful-muse/     # React frontend
       AuthContext.tsx       # Auth state + Supabase session
   supabase/
     setup.sql                         # Base schema (profiles, auth trigger)
-    projects-prompts-migration.sql    # New: projects, prompts, conversations.project_id
+    projects-prompts-migration.sql    # projects, prompts, conversations.project_id
+    project-files-migration.sql       # New: project_files table and storage bucket
 
 Backend-Yellowai/Manah_AI_Companion/manah-backend-py/     # FastAPI backend
   main.py           # App factory, routers, middleware
@@ -94,6 +96,7 @@ In your Supabase project → SQL Editor, run these in order:
 
 1. `supabase/setup.sql` — creates `profiles` table and auth trigger
 2. `supabase/projects-prompts-migration.sql` — creates `projects`, `prompts`, adds `project_id` to `conversations`
+3. `supabase/project-files-migration.sql` — creates `project_files` table and Supabase Storage bucket
 
 ### 2. Backend Setup
 
@@ -170,6 +173,9 @@ The app will be available at `http://localhost:5173`.
 | `PUT` | `/api/projects/{id}` | Update agent name/description |
 | `DELETE` | `/api/projects/{id}` | Delete agent (cascades) |
 | `POST` | `/api/projects/{id}/prompt` | Set/update active system prompt |
+| `POST` | `/api/projects/{id}/files` | Upload a file to agent's knowledge base |
+| `GET` | `/api/projects/{id}/files` | List uploaded files |
+| `DELETE` | `/api/projects/{id}/files/{file_id}` | Delete a file |
 | `POST` | `/api/chat/stream` | SSE streaming chat (project-scoped) |
 
 All endpoints except `/health` require `Authorization: Bearer <supabase_jwt>`.
