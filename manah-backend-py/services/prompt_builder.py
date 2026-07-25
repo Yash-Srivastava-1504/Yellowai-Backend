@@ -9,6 +9,7 @@ def build_project_prompt(
     *,
     system_prompt: str,
     thread: list[dict],
+    project_files: list[dict] = None,
 ) -> list[dict]:
     """
     Build the full OpenAI-format message array for a project chat.
@@ -24,6 +25,17 @@ def build_project_prompt(
 
     if system_prompt and system_prompt.strip():
         messages.append({"role": "system", "content": system_prompt.strip()})
+        
+    if project_files:
+        files_context = "\n\n--- ADDITIONAL UPLOADED KNOWLEDGE ---\n"
+        for f in project_files:
+            files_context += f"File: {f.get('file_name')}\n{f.get('extracted_text')}\n\n"
+        
+        # If there's no system prompt, create one just for the files
+        if not messages or messages[0]["role"] != "system":
+            messages.insert(0, {"role": "system", "content": files_context})
+        else:
+            messages[0]["content"] += files_context
 
     for m in thread:
         role = m.get("role")

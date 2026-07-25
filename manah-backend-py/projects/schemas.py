@@ -51,3 +51,10 @@ class ProjectListOut(BaseModel):
 
 class MessageOut(BaseModel):
     message: str
+
+
+class ProjectFileOut(BaseModel):
+    id: str
+    project_id: str
+    file_name: str
+    created_at: str

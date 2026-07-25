@@ -101,6 +101,24 @@ async def _fetch_project_prompt(project_id: str, user_id: str) -> str:
     return prompts[0]["content"] if prompts else ""
 
 
+async def _fetch_project_files(project_id: str) -> list[dict]:
+    """Fetch all extracted text from project files."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            _rest_url("project_files"),
+            headers=_supabase_headers(),
+            params={
+                "project_id": f"eq.{project_id}",
+                "select": "file_name,extracted_text",
+            },
+            timeout=8.0,
+        )
+    if resp.status_code >= 400:
+        logger.error(f"[Chat] Project files fetch failed: {resp.status_code} {resp.text}")
+        return []
+    return resp.json()
+
+
 def _sanitize(s: str) -> str:
     return s.replace("\x00", "").strip()[:MAX_CONTENT_LEN]
 
@@ -137,9 +155,14 @@ async def stream_chat(
 
     # Load project + active prompt (verifies ownership)
     system_prompt = await _fetch_project_prompt(body.project_id, user.id)
+    project_files = await _fetch_project_files(body.project_id)
 
     # Build the LLM message array
-    llm_messages = build_project_prompt(system_prompt=system_prompt, thread=thread)
+    llm_messages = build_project_prompt(
+        system_prompt=system_prompt, 
+        thread=thread,
+        project_files=project_files
+    )
 
     llm = get_llm_adapter()
 

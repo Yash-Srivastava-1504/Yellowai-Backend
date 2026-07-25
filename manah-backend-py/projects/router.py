@@ -13,7 +13,8 @@ POST   /api/projects/{id}/prompt — set or update the active prompt
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+import io
 from loguru import logger
 
 from auth.middleware import SupabaseUser, get_supabase_user
@@ -23,6 +24,7 @@ from projects.schemas import (
     MessageOut,
     ProjectListOut,
     ProjectOut,
+    ProjectFileOut,
     PromptOut,
     SetPromptRequest,
     UpdateProjectRequest,
@@ -274,3 +276,121 @@ async def set_project_prompt(
     })
     logger.info(f"[Projects] Updated prompt for project {project_id}")
     return _prompt_out(new_prompt)
+
+
+# ── GET /api/projects/{id}/files ──────────────────────────────────────────────
+
+@router.get("/{project_id}/files", response_model=list[ProjectFileOut])
+async def list_project_files(
+    project_id: str,
+    user: Annotated[SupabaseUser, Depends(get_supabase_user)],
+):
+    """List all files uploaded to a project."""
+    await _get_project_owned(project_id, user.id)
+    rows = await _supabase_get(
+        "project_files",
+        params={"project_id": f"eq.{project_id}", "order": "created_at.desc", "select": "id,project_id,file_name,created_at"},
+    )
+    return [ProjectFileOut(**r) for r in rows]
+
+
+# ── POST /api/projects/{id}/files ─────────────────────────────────────────────
+
+@router.post("/{project_id}/files", response_model=ProjectFileOut, status_code=201)
+async def upload_project_file(
+    project_id: str,
+    user: Annotated[SupabaseUser, Depends(get_supabase_user)],
+    file: UploadFile = File(...),
+):
+    """Upload a file, extract its text, and store it in Supabase Storage."""
+    await _get_project_owned(project_id, user.id)
+    
+    content = await file.read()
+    extracted_text = ""
+    filename = file.filename or "unknown"
+    
+    # 1. Extract text
+    if filename.lower().endswith(".pdf"):
+        import PyPDF2
+        try:
+            pdf = PyPDF2.PdfReader(io.BytesIO(content))
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    extracted_text += text + "\n"
+        except Exception as e:
+            logger.error(f"[Projects] PDF parse error: {e}")
+            raise HTTPException(400, "Could not parse PDF file.")
+    else:
+        # Assume text
+        try:
+            extracted_text = content.decode("utf-8")
+        except Exception:
+            raise HTTPException(400, "Unsupported file format. Please upload PDF or Text.")
+    
+    if not extracted_text.strip():
+        raise HTTPException(400, "File is empty or contains no readable text.")
+
+    # 2. Upload to Supabase Storage (raw file)
+    import uuid
+    storage_path = f"{user.id}/{project_id}/{uuid.uuid4()}_{filename}"
+    
+    async with httpx.AsyncClient() as client:
+        # Note: Using the REST API for storage
+        storage_url = f"{(settings.SUPABASE_URL or '').rstrip('/')}/storage/v1/object/project_files/{storage_path}"
+        headers = _supabase_headers()
+        # For Storage upload, content-type is the file type
+        headers["Content-Type"] = file.content_type or "application/octet-stream"
+        
+        resp = await client.post(storage_url, headers=headers, content=content, timeout=30.0)
+        if resp.status_code >= 400:
+            logger.error(f"[Projects] Storage upload failed: {resp.text}")
+            raise HTTPException(502, "Failed to upload file to storage.")
+
+    # 3. Save metadata and extracted text to database
+    db_row = await _supabase_post("project_files", {
+        "project_id": project_id,
+        "file_name": filename,
+        "storage_path": storage_path,
+        "extracted_text": extracted_text.strip()
+    })
+    
+    logger.info(f"[Projects] Uploaded file {filename} to project {project_id}")
+    return ProjectFileOut(
+        id=db_row["id"],
+        project_id=db_row["project_id"],
+        file_name=db_row["file_name"],
+        created_at=db_row["created_at"]
+    )
+
+
+# ── DELETE /api/projects/{id}/files/{file_id} ─────────────────────────────────
+
+@router.delete("/{project_id}/files/{file_id}", response_model=MessageOut)
+async def delete_project_file(
+    project_id: str,
+    file_id: str,
+    user: Annotated[SupabaseUser, Depends(get_supabase_user)],
+):
+    """Delete a file from the project and from storage."""
+    await _get_project_owned(project_id, user.id)
+    
+    # 1. Get storage path
+    rows = await _supabase_get(
+        "project_files",
+        params={"id": f"eq.{file_id}", "project_id": f"eq.{project_id}", "select": "storage_path"}
+    )
+    if not rows:
+        raise HTTPException(404, "File not found.")
+    storage_path = rows[0]["storage_path"]
+    
+    # 2. Delete from DB
+    await _supabase_delete("project_files", {"id": f"eq.{file_id}"})
+    
+    # 3. Delete from storage (fire and forget)
+    async with httpx.AsyncClient() as client:
+        storage_url = f"{(settings.SUPABASE_URL or '').rstrip('/')}/storage/v1/object/project_files/{storage_path}"
+        await client.delete(storage_url, headers=_supabase_headers(), timeout=10.0)
+        
+    logger.info(f"[Projects] Deleted file {file_id} from project {project_id}")
+    return MessageOut(message="File deleted successfully.")

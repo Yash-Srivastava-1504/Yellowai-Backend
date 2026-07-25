@@ -32,6 +32,7 @@ apscheduler>=3.10.0
 
 # === Utilities ===
 python-multipart>=0.0.9  # Form data support
+PyPDF2>=3.0.1            # PDF text extraction
 loguru>=0.7.0
 
 # === Testing ===
