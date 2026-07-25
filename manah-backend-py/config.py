@@ -1,5 +1,5 @@
 """
-Manah Backend — Configuration
+ChatBot Platform — Configuration
 All environment variables loaded via pydantic-settings.
 """
 from functools import lru_cache
@@ -15,30 +15,22 @@ class Settings(BaseSettings):
     PORT: int = 3001
     NODE_ENV: str = "development"
 
-    # ── Supabase JWT ───────────────────────────────────────────────────────────
+    # ── Supabase JWT (auth) ────────────────────────────────────────────────────
     SUPABASE_URL: Optional[str] = None
     SUPABASE_PUBLISHABLE_KEY: Optional[str] = None
-    SUPABASE_SECRET_KEY: Optional[str] = None
-    SUPABASE_JWKS_URL: Optional[str] = None   # explicit override; auto-derived from URL if absent
-    SUPABASE_JWT_SECRET: Optional[str] = None  # only for legacy HS256 projects
-
-    # ── JWT (legacy SQLite auth + WebSocket) ──────────────────────────────────
-    JWT_SECRET: str = "change_this_to_a_long_random_secret"
-    JWT_REFRESH_SECRET: str = "change_this_too_separate_secret"
-    JWT_EXPIRES_IN: int = 3600          # seconds (1 hour)
-    JWT_REFRESH_EXPIRES_IN: int = 2592000  # seconds (30 days)
-
-    # ── Database ───────────────────────────────────────────────────────────────
-    DB_PATH: str = "./data/manah.db"
+    SUPABASE_SECRET_KEY: Optional[str] = None           # anon/service key (legacy name kept)
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None     # service role key for server-side REST calls
+    SUPABASE_JWKS_URL: Optional[str] = None             # explicit override; auto-derived from URL if absent
+    SUPABASE_JWT_SECRET: Optional[str] = None           # only for legacy HS256 projects
 
     # ── OpenRouter ─────────────────────────────────────────────────────────────
     OPENROUTER_API_KEY: Optional[str] = None
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     OPENROUTER_MODEL: str = "google/gemini-2.5-flash"
     OPENROUTER_HTTP_REFERER: str = "http://localhost:5173"
-    OPENROUTER_APP_TITLE: str = "Manah"
+    OPENROUTER_APP_TITLE: str = "ChatBot Platform"
 
-    # ── Qubrid ─────────────────────────────────────────────────────────────────
+    # ── Qubrid (fallback LLM) ──────────────────────────────────────────────────
     QUBRID_API_KEY: Optional[str] = None
     QUBRID_BASE_URL: str = "https://platform.qubrid.com/v1"
     QUBRID_MODEL: str = "google/gemini-2.5-flash"

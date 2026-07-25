@@ -1,0 +1,3 @@
+"""
+ChatBot Platform — Projects Module
+"""

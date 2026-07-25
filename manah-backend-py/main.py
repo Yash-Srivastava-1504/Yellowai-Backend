@@ -1,10 +1,8 @@
 """
-Manah Backend — FastAPI Application
-Port of manah-backend (Node.js/Express) to Python/FastAPI.
+ChatBot Platform — FastAPI Application
 
 Startup: uvicorn main:app --reload --port 3001
 """
-import os
 import time
 from contextlib import asynccontextmanager
 
@@ -17,7 +15,6 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from config import get_settings
-from database import init_db
 from llm import get_llm_provider_label
 
 settings = get_settings()
@@ -29,34 +26,25 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
 # ── Lifespan ───────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🌿 Manah Backend starting up (FastAPI)…")
-
-    # Init SQLite (sync, one-time schema creation)
-    init_db()
-    logger.success("✓ Database ready")
-
-    # Start background summarization scheduler
-    from jobs.summarization import start_summarization_job
-    scheduler = start_summarization_job()
+    logger.info("🚀 ChatBot Platform Backend starting up (FastAPI)…")
 
     llm_label = "🧪 MOCK" if settings.USE_MOCK_LLM else f"✨ {get_llm_provider_label()}"
     logger.info(f"🤖 LLM: {llm_label}")
     logger.info(f"🔐 CORS origins: {settings.cors_allowed_origins}")
-    logger.info(f"💬 Companion API (Supabase JWT): POST /api/companion/chat")
-    logger.info(f"🔌 WebSocket (legacy SQLite chat): ws://localhost:{settings.PORT}/ws/chat")
-    logger.success(f"🚀 Manah Backend running on http://localhost:{settings.PORT}")
+    logger.info(f"📁 Projects API: /api/projects")
+    logger.info(f"💬 Chat stream: POST /api/chat/stream")
+    logger.success(f"✅ Backend running on http://localhost:{settings.PORT}")
 
     yield
 
-    logger.info("Manah Backend shutting down…")
-    scheduler.shutdown(wait=False)
+    logger.info("ChatBot Platform Backend shutting down…")
 
 
 # ── App factory ────────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="Manah API",
-    description="Manah AI Companion — Saathi for Indian Gen-Z. Python/FastAPI backend.",
-    version="2.0.0",
+    title="ChatBot Platform API",
+    description="Multi-user AI agent platform — build, customize, and chat with your own AI agents.",
+    version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -76,7 +64,7 @@ app.add_middleware(
 )
 
 
-# ── Security headers middleware (helmet equivalent) ───────────────────────────
+# ── Security headers middleware ────────────────────────────────────────────────
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -111,20 +99,12 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # ── Routers ────────────────────────────────────────────────────────────────────
 from auth.router import router as auth_router
-from chat.router import router as chat_router
-from companion.router import router as companion_router
-from mood.router import router as mood_router
-from settings.router import router as settings_router
-from user.router import router as user_router
-from websocket.ws_chat import router as ws_router
+from chat_v2.router import router as chat_router
+from projects.router import router as projects_router
 
 app.include_router(auth_router)
 app.include_router(chat_router)
-app.include_router(companion_router)
-app.include_router(mood_router)
-app.include_router(settings_router)
-app.include_router(user_router)
-app.include_router(ws_router)
+app.include_router(projects_router)
 
 
 # ── Health check ───────────────────────────────────────────────────────────────
@@ -132,9 +112,9 @@ app.include_router(ws_router)
 async def health():
     return {
         "status": "ok",
-        "service": "manah-backend-py",
+        "service": "chatbot-platform-api",
         "timestamp": __import__("datetime").datetime.utcnow().isoformat() + "Z",
-        "version": "2.0.0",
+        "version": "3.0.0",
     }
 
 
