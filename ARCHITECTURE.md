@@ -2,33 +2,33 @@
 
 ## Entity Diagram
 
-```
-┌─────────────┐
-│   auth.users │  (Supabase Auth — managed)
-└──────┬──────┘
-       │ 1:1
-       ▼
-┌─────────────┐
-│   profiles   │  display_name, anonymous, theme
-└──────┬──────┘
-       │ 1:N
-       ▼
-┌─────────────┐
-│   projects   │  id, user_id, name, description, created_at
-└──────┬──────┘
-       │ 1:N
-       ├──────────────────────────┐
-       ▼                          ▼
-┌─────────────┐         ┌─────────────────┐         ┌─────────────────┐
-│   prompts    │         │  conversations  │         │  project_files  │
-│  (versioned) │         │  project_id FK  │         │  project_id FK  │
-│  is_active   │         └────────┬────────┘         └─────────────────┘
-└─────────────┘                  │ 1:N
-                                  ▼
-                         ┌─────────────────┐
-                         │    messages      │
-                         │  role, content   │
-                         └─────────────────┘
+```text
+                              ┌─────────────┐
+                              │ auth.users  │  (Supabase Auth)
+                              └──────┬──────┘
+                                     │ 1:1
+                                     ▼
+                              ┌─────────────┐
+                              │  profiles   │  (display_name, theme)
+                              └──────┬──────┘
+                                     │ 1:N
+                                     ▼
+                              ┌─────────────┐
+                              │  projects   │  (id, name, desc)
+                              └──────┬──────┘
+                                     │ 1:N
+        ┌────────────────────────────┼────────────────────────────┐
+        ▼                            ▼                            ▼
+ ┌─────────────┐              ┌─────────────┐              ┌─────────────┐
+ │   prompts   │              │conversations│              │project_files│
+ │ (versioned) │              │project_id FK│              │project_id FK│
+ │  is_active  │              └──────┬──────┘              └─────────────┘
+ └─────────────┘                     │ 1:N
+                                     ▼
+                              ┌─────────────┐
+                              │  messages   │
+                              │role, content│
+                              └─────────────┘
 ```
 
 **Relationships:**
@@ -71,62 +71,63 @@ The `OpenRouterAdapter._with_retry()` method retries up to 3 times with exponent
 
 ## Data Flow: Chat Request
 
-```
-Client (React)
-  │
-  │  POST /api/chat/stream
-  │  Authorization: Bearer <supabase_jwt>
-  │  Body: { project_id, messages: [{role, content}] }
-  │
-  ▼
-FastAPI (chat_v2/router.py)
-  │
-  ├─ get_supabase_user() → verify JWT (JWKS/HS256)
-  │
-  ├─ _fetch_project_prompt(project_id, user_id)
-  │    ├─ Supabase REST: verify project.user_id == auth user
-  │    └─ Supabase REST: fetch active prompt content
-  │
-  ├─ _fetch_project_files(project_id)
-  │    └─ Supabase REST: fetch extracted text from all project files
-  │
-  ├─ build_project_prompt(system_prompt, thread, project_files)
-  │    └─ [{role:system, content:prompt+files}, ...messages]
-  │
-  ├─ llm.stream_chat(messages)  →  OpenRouter API (Gemini)
-  │
-  └─ StreamingResponse (SSE)
-       └─ yield "data: {delta, done}" per token
-            │
-            ▼
-       Client renders tokens live
-       Saves final reply to Supabase (messages table)
+```text
+ Client (React)
+   │
+   │  POST /api/chat/stream
+   │  Authorization: Bearer <supabase_jwt>
+   │  Body: { project_id, messages: [{role, content}] }
+   │
+   ▼
+ FastAPI (chat_v2/router.py)
+   │
+   ├─ get_supabase_user()  ──> verify JWT (JWKS/HS256)
+   │
+   ├─ _fetch_project_prompt(project_id, user_id)
+   │    ├─ Supabase REST: verify project.user_id == auth user
+   │    └─ Supabase REST: fetch active prompt content
+   │
+   ├─ _fetch_project_files(project_id)
+   │    └─ Supabase REST: fetch extracted text from all project files
+   │
+   ├─ build_project_prompt(system_prompt, thread, project_files)
+   │    └─ [{role:system, content:prompt+files}, ...messages]
+   │
+   ├─ llm.stream_chat(messages)  ──>  OpenRouter API (Gemini)
+   │
+   └─ StreamingResponse (SSE)
+        │
+        └─ yield "data: {delta, done}" per token
+             │
+             ▼
+        Client renders tokens live
+        Saves final reply to Supabase (messages table)
 ```
 
 ---
 
 ## Security Boundary
 
-```
-┌────────────────────────────────────────────┐
-│                 Browser                    │
-│  • Supabase anon key (public — safe)       │
-│  • VITE_SUPABASE_URL (public — safe)       │
-│  • Supabase Auth session / JWT             │
-│  • Never sees OpenRouter API key           │
-└────────────────┬───────────────────────────┘
-                 │ HTTPS + Bearer JWT
-                 ▼
-┌────────────────────────────────────────────┐
-│              FastAPI Backend               │
-│  • Holds OPENROUTER_API_KEY (server-only)  │
-│  • Holds SUPABASE_SERVICE_ROLE_KEY         │
-│  • Validates JWT before every request      │
-│  • Proxies LLM calls — key never exposed   │
-└────────────────┬───────────────────────────┘
-                 │
-        ┌────────┴────────┐
-        ▼                 ▼
-   OpenRouter API    Supabase REST API
-   (LLM provider)   (service role key)
+```text
+ ┌────────────────────────────────────────────┐
+ │                  Browser                   │
+ │  • Supabase anon key (public — safe)       │
+ │  • VITE_SUPABASE_URL (public — safe)       │
+ │  • Supabase Auth session / JWT             │
+ │  • Never sees OpenRouter API key           │
+ └─────────────────────┬──────────────────────┘
+                       │ HTTPS + Bearer JWT
+                       ▼
+ ┌────────────────────────────────────────────┐
+ │               FastAPI Backend              │
+ │  • Holds OPENROUTER_API_KEY (server-only)  │
+ │  • Holds SUPABASE_SERVICE_ROLE_KEY         │
+ │  • Validates JWT before every request      │
+ │  • Proxies LLM calls — key never exposed   │
+ └─────────────────────┬──────────────────────┘
+                       │
+             ┌─────────┴─────────┐
+             ▼                   ▼
+      OpenRouter API     Supabase REST API
+      (LLM provider)    (service role key)
 ```
